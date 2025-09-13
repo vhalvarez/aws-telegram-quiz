@@ -8,3 +8,7 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "change-me")  # para verificación de w
 
 # Si es 1/true, devolvemos el texto de respuesta en el HTTP response (útil para pruebas con curl)
 LOCAL_ECHO = os.getenv("LOCAL_ECHO", "1").lower() in ("1", "true", "yes")
+
+# Telegram
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_SECRET_TOKEN = os.getenv("TELEGRAM_SECRET_TOKEN", "")
