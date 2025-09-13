@@ -3,7 +3,11 @@ from fastapi.responses import PlainTextResponse, JSONResponse
 from typing import Dict, Any, List
 import random
 
-from app.config import VERIFY_TOKEN, LOCAL_ECHO
+from app.config import (
+    VERIFY_TOKEN, LOCAL_ECHO,
+    TELEGRAM_BOT_TOKEN, TELEGRAM_SECRET_TOKEN
+)
+from app.telegram import send_telegram_text
 
 app = FastAPI(title="AWS WhatsApp Quiz", version="0.2.0")
 
@@ -86,6 +90,9 @@ def answer_to_index(text: str) -> int | None:
 
 def handle_command(user: str, text: str) -> str:
     t = (text or "").strip().lower()
+
+    if t.startswith("/"):
+        t = t[1:]  # <-- permite /start, /help, etc.
 
     if t in ("start", "quiz", "hola", "help", "ayuda"):
         return start_quiz_for_user(user)
@@ -185,3 +192,53 @@ async def webhook(request: Request):
     except Exception as e:
         print(f"[WEBHOOK ERROR] {e}")
         return JSONResponse({"ok": True})
+    
+@app.post("/tg/webhook")
+async def tg_webhook(request: Request):
+    """
+    Webhook de Telegram:
+    - Valida secret token si lo configuraste.
+    - Soporta mensajes de texto y callbacks (si luego usas botones).
+    - Reusa handle_command(...) para contestar.
+    """
+    # 1) Validar secreto del webhook (opcional pero recomendado)
+    if TELEGRAM_SECRET_TOKEN:
+        header_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+        if header_token != TELEGRAM_SECRET_TOKEN:
+            return JSONResponse({"ok": True})  # ignorar silenciosamente
+
+    body = await request.json()
+    # 2) Extraer chat_id y texto
+    chat_id = None
+    text = ""
+
+    # a) Mensaje normal
+    msg = body.get("message")
+    if msg and msg.get("chat"):
+        chat_id = msg["chat"]["id"]
+        text = (msg.get("text") or "").strip()
+
+    # b) Callback de botón (opcional futuro)
+    if not chat_id:
+        cb = body.get("callback_query")
+        if cb and cb.get("message"):
+            chat_id = cb["message"]["chat"]["id"]
+            text = (cb.get("data") or "").strip()
+
+    if not chat_id:
+        return JSONResponse({"ok": True})
+
+    # 3) Reusar el cerebro del quiz
+    reply = handle_command(str(chat_id), text or "")
+
+    # 4) Enviar respuesta
+    if LOCAL_ECHO or not TELEGRAM_BOT_TOKEN:
+        # modo prueba sin enviar realmente
+        return JSONResponse({"ok": True, "reply": reply})
+    try:
+        send_telegram_text(TELEGRAM_BOT_TOKEN, chat_id, reply)
+    except Exception as e:
+        print(f"[TG SEND ERROR] {e}")
+
+    return JSONResponse({"ok": True})
+
